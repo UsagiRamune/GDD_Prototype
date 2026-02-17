@@ -1,0 +1,691 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>Perfect Puff</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body { background: #111; overflow: hidden; touch-action: none; user-select: none;
+       -webkit-user-select: none; display: flex; align-items: center;
+       justify-content: center; height: 100vh; }
+canvas { display: block; }
+</style>
+<script src="https://cdn.jsdelivr.net/npm/phaser@3.60.0/dist/phaser.min.js"></script>
+</head>
+<body>
+<script>
+const W = 1280, H = 720;
+const DPR = window.devicePixelRatio || 1;
+
+const C = {
+  BG:0x111111, P1:0x33ccff, P2:0xff44cc,
+  PANEL:0x1a1a2e, GREEN:0x00e676, YELLOW:0xffe600, RED:0xff1744
+};
+
+// Font stacks — ใช้ system sans-serif ตัวหนา อ่านง่าย
+const FONT_UI   = 'system-ui, -apple-system, "Segoe UI", Arial, sans-serif';
+const FONT_MONO = '"Courier New", monospace';
+
+function T(s, x, y, str, style) {
+  return s.add.text(x, y, str, {
+    resolution:  DPR,
+    fontFamily:  FONT_UI,
+    ...style,
+  });
+}
+
+// Presets
+const TIME_PRESETS = [15, 30, 45, 60];
+const RACE_PRESETS = [10, 15, 20, 30];  // first-to-N
+
+// Depth layers
+const D = { BG:0, GRID:1, PLAYER:10, GAME_UI:15, HUD:40, MENU:50, RESULT_BG:60, RESULT_UI:70, FLOAT:100 };
+
+// ═══════════════════════════════════════════════════
+//  MAIN SCENE
+// ═══════════════════════════════════════════════════
+class MainScene extends Phaser.Scene {
+  constructor() { super('MainScene'); }
+
+  create() {
+    this.gameState   = 'MENU';
+    this.playerCount = 1;
+    this.gameMode    = 'TIME';
+    this.timePreset  = 30;
+    this.racePreset  = 15;
+
+    // BG + grid
+    this.add.rectangle(W/2,H/2,W,H,C.BG).setDepth(D.BG);
+    let grid = this.add.graphics().setDepth(D.GRID);
+    grid.lineStyle(1,0x222233,0.35);
+    for (let x=0;x<=W;x+=80) grid.lineBetween(x,0,x,H);
+    for (let y=0;y<=H;y+=80) grid.lineBetween(0,y,W,y);
+
+    this.splitLine = this.add.graphics().setDepth(D.GAME_UI).setVisible(false);
+
+    // Containers — depth แยกชัดเจน
+    this.menuC   = this.add.container(0,0).setDepth(D.MENU);
+    this.gameC   = this.add.container(0,0).setDepth(D.PLAYER).setVisible(false);
+    this.hudC    = this.add.container(0,0).setDepth(D.HUD).setVisible(false);
+    this.resultC = this.add.container(0,0).setDepth(D.RESULT_BG).setVisible(false);
+
+    this.p1 = new Player(this,1,C.P1);
+    this.p2 = new Player(this,2,C.P2);
+
+    this.buildMenu();
+    this.buildHUD();
+
+    this.keyA = this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.A);
+    this.keyR = this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.RIGHT);
+    this.input.addPointer(2);
+  }
+
+  // ═══════════════════════════════════════════
+  //  MENU
+  // ═══════════════════════════════════════════
+  buildMenu() {
+    const cx = W/2;
+
+    let glowG = this.add.graphics();
+    glowG.fillStyle(C.P1,0.05);
+    glowG.fillRoundedRect(cx-380,72,760,130,20);
+
+    let sub = T(this,cx,107,'HOLD TO INFLATE  ·  RELEASE TO SCORE',
+      { fontSize:'18px', fontStyle:'bold', color:'#5566aa', letterSpacing:4 }).setOrigin(0.5);
+    let title = T(this,cx,164,'PERFECT PUFF',
+      { fontSize:'88px', fontStyle:'bold', color:'#ffffff',
+        stroke:'#33ccff', strokeThickness:3 }).setOrigin(0.5);
+
+    // divider
+    let dv = this.add.graphics();
+    dv.lineStyle(1,0x334466,0.6); dv.lineBetween(cx,250,cx,312);
+
+    // ── Player count ──────────────────────
+    let pg = this.add.graphics();
+    pg.lineStyle(1,0x334466,0.4); pg.strokeRoundedRect(cx-395,247,376,74,12);
+    let pl = T(this,cx-207,258,'PLAYERS',
+      { fontSize:'14px', fontStyle:'bold', color:'#445577', letterSpacing:4 }).setOrigin(0.5);
+    this.b1P = this.mkToggle(cx-315,291,'1P',true, C.P1,()=>this.setPlayers(1));
+    this.b2P = this.mkToggle(cx-100,291,'2P',false,C.P1,()=>this.setPlayers(2));
+
+    // ── Game mode ─────────────────────────
+    let mg = this.add.graphics();
+    mg.lineStyle(1,0x334466,0.4); mg.strokeRoundedRect(cx+19,247,376,74,12);
+    let ml = T(this,cx+207,258,'MODE',
+      { fontSize:'14px', fontStyle:'bold', color:'#445577', letterSpacing:4 }).setOrigin(0.5);
+    this.bTm = this.mkToggle(cx+100,291,'TIME ATTACK',true, C.P2,()=>this.setMode('TIME'));
+    this.bRc = this.mkToggle(cx+315,291,'RACE MODE',  false,C.P2,()=>this.setMode('RACE'));
+
+    // ── Preset row label ──────────────────
+    this.presetLbl = T(this,cx,348,'DURATION',
+      { fontSize:'14px', fontStyle:'bold', color:'#445577', letterSpacing:4 }).setOrigin(0.5);
+
+    // ── TIME presets ──────────────────────
+    this.timeBtns = [];
+    const tLabels=['15 sec','30 sec','45 sec','60 sec'];
+    const tSpX=cx-tLabels.length*70; // computed per btn below
+    for (let i=0;i<4;i++) {
+      let bx = cx - 210 + i*140;
+      let b = this.mkPreset(bx,386,tLabels[i],TIME_PRESETS[i]===this.timePreset,C.P1,i,'time');
+      this.timeBtns.push(b);
+    }
+
+    // ── RACE presets ──────────────────────
+    this.raceBtns = [];
+    const rLabels=['10 wins','15 wins','20 wins','30 wins'];
+    for (let i=0;i<4;i++) {
+      let bx = cx - 210 + i*140;
+      let b = this.mkPreset(bx,386,rLabels[i],RACE_PRESETS[i]===this.racePreset,C.P2,i,'race');
+      this.raceBtns.push(b);
+      b.bg.setVisible(false); b.txt.setVisible(false); b.hit.setVisible(false);
+    }
+
+    // ── Info / rules area ─────────────────
+    this.raceBox = this.add.graphics().setVisible(false);
+    this.raceBox.fillStyle(0xff1744,0.07);
+    this.raceBox.fillRoundedRect(cx-372,418,744,64,12);
+    this.raceBox.lineStyle(1,0xff1744,0.3);
+    this.raceBox.strokeRoundedRect(cx-372,418,744,64,12);
+
+    this.infoTxt = T(this,cx,450,
+      '⏱  Score as many points as possible — PERFECT = 100 pts,  GOOD = 50 pts,  POP = −50 pts',
+      { fontSize:'17px', fontStyle:'bold', color:'#7788aa' }).setOrigin(0.5);
+
+    this.raceTxt = T(this,cx,450,
+      '⚡  PERFECT = +1 win    GOOD / TOO SMALL = nothing    POP = no win',
+      { fontSize:'17px', fontStyle:'bold', color:'#ff8899' }).setOrigin(0.5).setVisible(false);
+
+    // ── START button ──────────────────────
+    this.mkBigBtn(cx,540,'START GAME',C.GREEN,320,76,()=>this.startGame());
+
+    // ── Controls hint ─────────────────────
+    let hint = T(this,cx,626,
+      'P1:  hold  [A]  or tap left side     |     P2:  hold  [→]  or tap right side',
+      { fontSize:'17px', fontStyle:'bold', color:'#3a4d66' }).setOrigin(0.5);
+
+    this.menuC.add([
+      glowG, sub, title, dv,
+      pg, pl, mg, ml,
+      this.presetLbl,
+      this.infoTxt, this.raceBox, this.raceTxt,
+      hint,
+    ]);
+  }
+
+  mkToggle(x,y,lbl,on,ac,cb) {
+    const bw=182,bh=50;
+    let bg=this.add.graphics(), bar=this.add.graphics();
+    let txt=T(this,x,y,lbl,{ fontSize:'21px', fontStyle:'bold', color:on?'#fff':'#556677' }).setOrigin(0.5);
+    const rd=(v)=>{
+      bg.clear(); bar.clear();
+      if(v){
+        bg.fillStyle(ac,0.15); bg.fillRoundedRect(x-bw/2,y-bh/2,bw,bh,10);
+        bg.lineStyle(2,ac,1);  bg.strokeRoundedRect(x-bw/2,y-bh/2,bw,bh,10);
+        bar.fillStyle(ac,1);   bar.fillRoundedRect(x-24,y+bh/2-4,48,3,2);
+        txt.setColor('#ffffff');
+      } else {
+        bg.fillStyle(0x1a1a2e,0.7); bg.fillRoundedRect(x-bw/2,y-bh/2,bw,bh,10);
+        bg.lineStyle(1,0x334455,0.8); bg.strokeRoundedRect(x-bw/2,y-bh/2,bw,bh,10);
+        txt.setColor('#556677');
+      }
+    };
+    rd(on);
+    let hit=this.add.rectangle(x,y,bw,bh,0,0).setInteractive();
+    hit.on('pointerdown',cb);
+    this.menuC.add([bg,bar,txt,hit]);
+    return{bg,bar,txt,hit,rd};
+  }
+
+  mkPreset(x,y,lbl,on,ac,idx,group) {
+    const bw=128,bh=46;
+    let bg=this.add.graphics();
+    let txt=T(this,x,y,lbl,{ fontSize:'20px', fontStyle:'bold', color:on?'#fff':'#556677' }).setOrigin(0.5);
+    const rd=(v)=>{
+      bg.clear();
+      if(v){
+        bg.fillStyle(ac,0.22); bg.fillRoundedRect(x-bw/2,y-bh/2,bw,bh,8);
+        bg.lineStyle(2,ac,1); bg.strokeRoundedRect(x-bw/2,y-bh/2,bw,bh,8);
+        txt.setColor('#ffffff');
+      }else{
+        bg.fillStyle(0x141420,0.85); bg.fillRoundedRect(x-bw/2,y-bh/2,bw,bh,8);
+        bg.lineStyle(1,0x333355,0.8); bg.strokeRoundedRect(x-bw/2,y-bh/2,bw,bh,8);
+        txt.setColor('#556677');
+      }
+    };
+    rd(on);
+    let hit=this.add.rectangle(x,y,bw,bh,0,0).setInteractive();
+    hit.on('pointerdown',()=>{
+      if(group==='time'){ this.timePreset=TIME_PRESETS[idx]; this.timeBtns.forEach((b,i)=>b.rd(i===idx)); }
+      else              { this.racePreset=RACE_PRESETS[idx]; this.raceBtns.forEach((b,i)=>b.rd(i===idx)); }
+    });
+    this.menuC.add([bg,txt,hit]);
+    return{bg,txt,hit,rd};
+  }
+
+  mkBigBtn(x,y,lbl,col,bw,bh,cb) {
+    let bg=this.add.graphics();
+    let txt=T(this,x,y,lbl,{ fontSize:'28px', fontStyle:'bold', color:'#001a00' }).setOrigin(0.5);
+    const dr=(hv)=>{
+      bg.clear();
+      bg.fillStyle(col,hv?1:0.88); bg.fillRoundedRect(x-bw/2,y-bh/2,bw,bh,16);
+      bg.fillStyle(0xffffff,hv?0.14:0.07); bg.fillRoundedRect(x-bw/2+4,y-bh/2+4,bw-8,bh/2-4,10);
+    };
+    dr(false);
+    let hit=this.add.rectangle(x,y,bw,bh,0,0).setInteractive();
+    hit.on('pointerdown',cb);
+    hit.on('pointerover',()=>dr(true));
+    hit.on('pointerout', ()=>dr(false));
+    this.menuC.add([bg,txt,hit]);
+  }
+
+  setPlayers(n){
+    this.playerCount=n;
+    this.b1P.rd(n===1); this.b2P.rd(n===2);
+  }
+
+  setMode(m){
+    this.gameMode=m;
+    const isT=m==='TIME';
+    this.bTm.rd(isT); this.bRc.rd(!isT);
+    this.timeBtns.forEach(b=>{ b.bg.setVisible(isT); b.txt.setVisible(isT); b.hit.setVisible(isT); });
+    this.raceBtns.forEach(b=>{ b.bg.setVisible(!isT); b.txt.setVisible(!isT); b.hit.setVisible(!isT); });
+    this.presetLbl.setText(isT?'DURATION':'FIRST TO');
+    this.infoTxt.setVisible(isT);
+    this.raceBox.setVisible(!isT);
+    this.raceTxt.setVisible(!isT);
+  }
+
+  // ═══════════════════════════════════════════
+  //  HUD  — depth สูงกว่า game container
+  // ═══════════════════════════════════════════
+  buildHUD() {
+    // timer pill
+    let hb=this.add.graphics();
+    hb.fillStyle(0x000000,0.65); hb.fillRoundedRect(W/2-115,12,230,58,14);
+    this.timerTxt=T(this,W/2,41,'READY',
+      { fontSize:'36px', fontStyle:'bold', color:'#ffffff' }).setOrigin(0.5);
+
+    // back button
+    let bbg=this.add.graphics();
+    bbg.fillStyle(0x1a1a2e,0.8); bbg.fillRoundedRect(12,14,120,52,10);
+    let bt=T(this,72,40,'← BACK',
+      { fontSize:'19px', fontStyle:'bold', color:'#7799aa' }).setOrigin(0.5);
+    let bh=this.add.rectangle(72,40,120,52,0,0).setInteractive();
+    bh.on('pointerdown',()=>this.toMenu());
+    bh.on('pointerover', ()=>bt.setColor('#ccddee'));
+    bh.on('pointerout',  ()=>bt.setColor('#7799aa'));
+
+    // race win counters
+    this.p1WinsTxt=T(this,220,41,'',
+      { fontSize:'24px', fontStyle:'bold', color:'#33ccff' }).setOrigin(0.5).setVisible(false);
+    this.p2WinsTxt=T(this,W-220,41,'',
+      { fontSize:'24px', fontStyle:'bold', color:'#ff44cc' }).setOrigin(0.5).setVisible(false);
+
+    this.hudC.add([hb,this.timerTxt,bbg,bt,bh,this.p1WinsTxt,this.p2WinsTxt]);
+  }
+
+  // ═══════════════════════════════════════════
+  //  GAME FLOW
+  // ═══════════════════════════════════════════
+  startGame() {
+    this.gameState='PLAYING';
+    this.menuC.setVisible(false);
+    this.resultC.setVisible(false);
+    this.gameC.setVisible(true);
+    this.hudC.setVisible(true);
+
+    if(this.playerCount===2){
+      this.splitLine.setVisible(true); this.splitLine.clear();
+      this.splitLine.lineStyle(2,0xffffff,0.1);
+      for(let y=0;y<H;y+=22) this.splitLine.lineBetween(W/2,y,W/2,y+11);
+    } else { this.splitLine.setVisible(false); }
+
+    if(this.playerCount===1){ this.p1.activate(W/2,H/2+30); this.p2.deactivate(); }
+    else{ this.p1.activate(W/4,H/2+30); this.p2.activate(W*3/4,H/2+30); }
+
+    if(this.gameMode==='TIME'){
+      this.timeLeft=this.timePreset;
+      this.timerTxt.setText(String(this.timeLeft));
+      this.p1WinsTxt.setVisible(false); this.p2WinsTxt.setVisible(false);
+      if(this.timeEv) this.timeEv.remove();
+      this.timeEv=this.time.addEvent({ delay:1000, loop:true, callback:()=>{
+        if(this.gameState!=='PLAYING') return;
+        this.timeLeft=Math.max(0,this.timeLeft-1);
+        this.timerTxt.setText(String(this.timeLeft));
+        if(this.timeLeft<=0) this.endGame();
+      }});
+    } else {
+      this.targetWins=this.racePreset;
+      this.timerTxt.setText(`FIRST TO ${this.targetWins}`);
+      if(this.playerCount===2){
+        this.p1WinsTxt.setVisible(true); this.p2WinsTxt.setVisible(true);
+        this.refreshRaceHUD();
+      }
+    }
+  }
+
+  refreshRaceHUD() {
+    this.p1WinsTxt.setText(`P1  ${this.p1.wins} / ${this.targetWins}`);
+    this.p2WinsTxt.setText(`P2  ${this.p2.wins} / ${this.targetWins}`);
+  }
+
+  // เรียกจาก Player เมื่อ perfect ในโหมด race
+  onRaceWin(player) {
+    player.wins++;   // เพิ่มที่นี่ที่เดียวเท่านั้น
+    player.winsTxt.setText(player.wins);   // update text ทันที
+    player.drawPill();
+    if(this.playerCount===2) this.refreshRaceHUD();
+  }
+
+  toMenu() {
+    this.gameState='MENU';
+    if(this.timeEv) this.timeEv.remove();
+    this.gameC.setVisible(false);
+    this.hudC.setVisible(false);
+    this.resultC.setVisible(false);
+    this.menuC.setVisible(true);
+    this.splitLine.setVisible(false);
+    this.p1.deactivate(); this.p2.deactivate();
+  }
+
+  update(t,d) {
+    if(this.gameState!=='PLAYING') return;
+    let p1=false,p2=false;
+    if(this.keyA.isDown) p1=true;
+    if(this.keyR.isDown) p2=true;
+    for(let i=0;i<this.input.manager.pointers.length;i++){
+      let ptr=this.input.manager.pointers[i];
+      if(ptr&&ptr.isDown){
+        if(this.playerCount===1) p1=true;
+        else if(ptr.x<W/2) p1=true; else p2=true;
+      }
+    }
+    this.p1.update(d,p1);
+    if(this.playerCount===2) this.p2.update(d,p2);
+    if(this.gameMode==='RACE'){
+      if(this.p1.wins>=this.targetWins){ this.endGame('P1 WINS! 🎉'); return; }
+      if(this.playerCount===2&&this.p2.wins>=this.targetWins){ this.endGame('P2 WINS! 🎉'); return; }
+    }
+  }
+
+  endGame(msg) {
+    if(this.gameState==='GAMEOVER') return;
+    this.gameState='GAMEOVER';
+    if(this.timeEv) this.timeEv.remove();
+
+    if(!msg){
+      if(this.playerCount===1){
+        msg = this.gameMode==='RACE'
+          ? `${this.p1.wins} PERFECT WINS`
+          : `SCORE: ${this.p1.score}`;
+      } else {
+        const bigger = this.gameMode==='RACE'
+          ? [this.p1.wins,this.p2.wins]
+          : [this.p1.score,this.p2.score];
+        msg = bigger[0]>bigger[1]?'P1 WINS! 🎉': bigger[1]>bigger[0]?'P2 WINS! 🎉':'DRAW!';
+      }
+    }
+
+    this.resultC.removeAll(true);
+
+    // ── Overlay — depth RESULT_BG ─────────────────────────────────
+    // overlay เป็น rectangle ธรรมดา ไม่ใส่ใน container
+    // วางตรงๆ บน scene แทน เพื่อให้ depth ควบคุมได้อิสระ
+    let ov = this.add.rectangle(W/2,H/2,W,H,0x000000,0.75).setDepth(D.RESULT_BG);
+
+    // card
+    const is2=this.playerCount===2, isRace=this.gameMode==='RACE';
+    const ch=(is2||isRace)?370:310;
+    let cardGfx=this.add.graphics().setDepth(D.RESULT_UI);
+    cardGfx.fillStyle(C.PANEL,1);
+    cardGfx.fillRoundedRect(W/2-295,H/2-ch/2,590,ch,24);
+    cardGfx.lineStyle(2,0x33ccff,0.45);
+    cardGfx.strokeRoundedRect(W/2-295,H/2-ch/2,590,ch,24);
+
+    let rt=T(this,W/2,H/2-78,msg,
+      { fontSize:'58px', fontStyle:'bold', color:'#ffffff',
+        stroke:'#33ccff', strokeThickness:2 }).setOrigin(0.5).setDepth(D.RESULT_UI);
+
+    // detail
+    let detailY=H/2-8;
+    if(is2){
+      let detail=isRace
+        ? `P1 wins: ${this.p1.wins}   |   P2 wins: ${this.p2.wins}`
+        : `P1: ${this.p1.score} pts   |   P2: ${this.p2.score} pts`;
+      T(this,W/2,detailY,detail,
+        { fontSize:'26px', fontStyle:'bold', color:'#8899cc' }).setOrigin(0.5).setDepth(D.RESULT_UI);
+    } else if(isRace){
+      T(this,W/2,detailY,`Wins: ${this.p1.wins} / ${this.targetWins}`,
+        { fontSize:'26px', fontStyle:'bold', color:'#8899cc' }).setOrigin(0.5).setDepth(D.RESULT_UI);
+    }
+
+    // ── MENU button — depth RESULT_UI (บนสุดใน result) ───────────
+    const by=H/2+(is2?100:70);
+    const bw=240, bh=62;
+    let btnBg=this.add.graphics().setDepth(D.RESULT_UI);
+    let btnTxt=T(this,W/2,by,'← MAIN MENU',
+      { fontSize:'24px', fontStyle:'bold', color:'#aaccee' }).setOrigin(0.5).setDepth(D.RESULT_UI);
+
+    const drBtn=(hv)=>{
+      btnBg.clear();
+      btnBg.fillStyle(0xffffff,hv?0.14:0.07);
+      btnBg.fillRoundedRect(W/2-bw/2,by-bh/2,bw,bh,14);
+      btnBg.lineStyle(2,hv?0x33ccff:0x446688,0.9);
+      btnBg.strokeRoundedRect(W/2-bw/2,by-bh/2,bw,bh,14);
+    };
+    drBtn(false);
+
+    let btnHit=this.add.rectangle(W/2,by,bw,bh,0,0)
+      .setInteractive().setDepth(D.RESULT_UI);
+    btnHit.on('pointerdown',()=>this.toMenu());
+    btnHit.on('pointerover', ()=>{ drBtn(true);  btnTxt.setColor('#ffffff'); });
+    btnHit.on('pointerout',  ()=>{ drBtn(false); btnTxt.setColor('#aaccee'); });
+
+    // เก็บ refs เพื่อ destroy ตอน removeAll
+    this.resultRefs=[ov,cardGfx,rt,btnBg,btnTxt,btnHit];
+
+    this.resultC.setVisible(true);
+  }
+
+  // override toMenu เพื่อ cleanup result refs ด้วย
+  toMenu() {
+    if(this.resultRefs){
+      this.resultRefs.forEach(o=>{if(o&&o.destroy)o.destroy();});
+      this.resultRefs=null;
+    }
+    this.gameState='MENU';
+    if(this.timeEv) this.timeEv.remove();
+    this.gameC.setVisible(false);
+    this.hudC.setVisible(false);
+    this.resultC.setVisible(false);
+    this.menuC.setVisible(true);
+    this.splitLine.setVisible(false);
+    this.p1.deactivate(); this.p2.deactivate();
+  }
+}
+
+// ═══════════════════════════════════════════════════
+//  PLAYER
+// ═══════════════════════════════════════════════════
+class Player {
+  constructor(s,id,col){
+    this.scene=s; this.id=id; this.color=col; this.isActive=false;
+    // ── zone thresholds (แคบลงมาก) ──
+    // baseR=40  minSafe=100  perfect=128  max=145
+    // good zone: 100-128 = 28px wide  (เดิม 30px)
+    // perfect zone: 128-145 = 17px wide  (แคบมาก ต้องแม่น)
+    this.baseR=40; this.minR=100; this.perfR=128; this.maxR=145;
+    this.growRate=0.20; this.shrinkRate=0.11;
+    this._prev=false;
+
+    this.ctr=s.add.container(0,0).setDepth(D.PLAYER).setVisible(false);
+    this.shadow   = s.add.ellipse(5,8,90,24,0x000000,0.22);
+    this.glow     = s.add.circle(0,0,55,col,0.15);
+    this.circ     = s.add.circle(0,0,this.baseR,col);
+    this.shineGfx = s.add.graphics();
+    this.ringGfx  = s.add.graphics();
+    this.pillGfx  = s.add.graphics();
+
+    this.scoreTxt = T(s,0,-212,'0',
+      { fontSize:'40px', fontStyle:'bold', color:'#ffffff' }).setOrigin(0.5);
+    this.winsTxt  = T(s,0,-212,'0',
+      { fontSize:'40px', fontStyle:'bold', color:'#ffffff' }).setOrigin(0.5).setVisible(false);
+
+    let lc=id===1?'#33ccff':'#ff44cc';
+    this.lbl=T(s,0,-264,`PLAYER ${id}`,
+      { fontSize:'17px', fontStyle:'bold', color:lc, letterSpacing:4 }).setOrigin(0.5);
+
+    this.ctr.add([this.shadow,this.glow,this.ringGfx,this.circ,
+                  this.shineGfx,this.pillGfx,this.scoreTxt,this.winsTxt,this.lbl]);
+  }
+
+  drawRings(st){
+    this.ringGfx.clear();
+    const P={
+      idle:   [[2,0x334466,0.5],[1,0x223355,0.4],[1,0x1a2244,0.3]],
+      good:   [[3,0xffe600,0.85],[2,0xffe600,0.5],[1,0xffe600,0.3]],
+      perfect:[[4,0x00e676,0.95],[3,0x00e676,0.6],[1,0x00e676,0.35]],
+      danger: [[4,0xff1744,0.95],[3,0xff1744,0.6],[1,0xff1744,0.35]],
+    };
+    let p=P[st]||P.idle;
+    this.ringGfx.lineStyle(p[0][0],p[0][1],p[0][2]); this.ringGfx.strokeCircle(0,0,this.maxR);
+    this.ringGfx.lineStyle(p[1][0],p[1][1],p[1][2]); this.ringGfx.strokeCircle(0,0,this.perfR);
+    this.ringGfx.lineStyle(p[2][0],p[2][1],p[2][2]); this.ringGfx.strokeCircle(0,0,this.minR);
+  }
+
+  drawShine(r){
+    this.shineGfx.clear(); if(r<12)return;
+    this.shineGfx.fillStyle(0xffffff,0.22); this.shineGfx.fillCircle(-r*0.3,-r*0.33,r*0.2);
+    this.shineGfx.fillStyle(0xffffff,0.1);  this.shineGfx.fillCircle(-r*0.15,-r*0.18,r*0.11);
+  }
+
+  drawPill(){
+    this.pillGfx.clear();
+    this.pillGfx.fillStyle(0x000000,0.4);
+    this.pillGfx.fillRoundedRect(-38,-234,76,44,10);
+  }
+
+  applyR(r){
+    this.currentSize=r;
+    this.circ.setRadius(r); this.glow.setRadius(r+12);
+    this.shadow.setDisplaySize(r*2.1,r*0.5);
+    this.drawShine(r);
+  }
+
+  resetState(){
+    this.score=0; this.wins=0; this._prev=false; this.isStunned=false;
+    this.scoreTxt.setText('0'); this.winsTxt.setText('0');
+    this.circ.setFillStyle(this.color);
+    this.glow.setFillStyle(this.color,0.15);
+    this.applyR(this.baseR); this.drawRings('idle'); this.drawPill();
+    const isRace=this.scene.gameMode==='RACE';
+    this.scoreTxt.setVisible(!isRace);
+    this.winsTxt.setVisible(isRace);
+  }
+
+  activate(x,y){ this.isActive=true; this.ctr.setPosition(x,y).setVisible(true); this.resetState(); }
+  deactivate()  { this.isActive=false; this.ctr.setVisible(false); }
+
+  update(d,press){
+    if(!this.isActive||this.isStunned){ this._prev=false; return; }
+
+    if(press){
+      let nr=Math.min(this.currentSize+this.growRate*d, this.maxR);
+      this.applyR(nr);
+      // ring feedback
+      if(nr>=this.perfR){
+        this.drawRings('perfect');
+        this.glow.setFillStyle(0x00e676, 0.12+0.12*Math.abs(Math.sin(Date.now()*0.008)));
+      } else if(nr>=this.minR){
+        this.drawRings('good'); this.glow.setFillStyle(0xffe600,0.12);
+      } else {
+        this.drawRings('idle'); this.glow.setFillStyle(this.color,0.12);
+      }
+      if(nr>=this.maxR*0.92){
+        this.drawRings('danger');
+        this.glow.setFillStyle(0xff1744, 0.1+0.22*Math.abs(Math.sin(Date.now()*0.014)));
+      }
+      if(nr>=this.maxR){ this.pop(); this._prev=false; return; }
+      this._prev=true;
+    } else {
+      if(this._prev) this.evalScore();
+      this._prev=false;
+      if(this.currentSize>this.baseR){
+        this.applyR(Math.max(this.baseR, this.currentSize-this.shrinkRate*d));
+        this.glow.setFillStyle(this.color,0.1); this.drawRings('idle');
+      }
+    }
+  }
+
+  evalScore(){
+    const r=this.currentSize;
+    if(r<this.baseR+6) return;
+    const isRace=this.scene.gameMode==='RACE';
+
+    if(isRace){
+      // ─ RACE: PERFECT only ─────────────────
+      // wins++ อยู่ใน onRaceWin() ที่เดียว ไม่ได้ +1 ที่นี่
+      if(r>=this.perfR && r<this.maxR){
+        this.showFloat('✦ PERFECT!','#00e676');
+        this.scene.onRaceWin(this);  // wins++ + setText เกิดที่นี่ครั้งเดียว
+        this.scene.tweens.add({ targets:this.winsTxt, scaleX:1.45,scaleY:1.45, duration:90, yoyo:true, ease:'Back.easeOut' });
+      } else if(r>=this.minR){
+        this.showFloat('NOT PERFECT','#778899');
+      } else {
+        this.showFloat('TOO SMALL','#556677');
+      }
+      this.resetBalloon();
+    } else {
+      // ─ TIME: score ────────────────────────
+      let earned=0, msg='', mc='#fff';
+      if(r<this.minR){
+        msg='TOO SMALL'; mc='#6677aa'; earned=0;
+      } else if(r<this.perfR){
+        msg='GOOD +50'; mc='#ffe600'; earned=50;
+      } else {
+        msg='PERFECT! +100'; mc='#00e676'; earned=100;
+      }
+      if(earned>0){
+        this.score+=earned; this.scoreTxt.setText(this.score); this.drawPill();
+        this.scene.tweens.add({ targets:this.scoreTxt, scaleX:1.45,scaleY:1.45, duration:90, yoyo:true, ease:'Back.easeOut' });
+      }
+      this.showFloat(msg,mc);
+      this.resetBalloon();
+    }
+  }
+
+  resetBalloon(){
+    this.applyR(this.baseR);
+    this.circ.setFillStyle(this.color);
+    this.glow.setFillStyle(this.color,0.15);
+    this.drawRings('idle');
+  }
+
+  pop(){
+    this.scene.cameras.main.shake(110,0.007);
+    for(let i=0;i<12;i++){
+      let a=(i/12)*Math.PI*2, dist=Phaser.Math.Between(55,140);
+      let dot=this.scene.add.circle(this.ctr.x,this.ctr.y,Phaser.Math.Between(3,9),this.color);
+      this.scene.tweens.add({ targets:dot,
+        x:this.ctr.x+Math.cos(a)*dist, y:this.ctr.y+Math.sin(a)*dist,
+        alpha:0, scale:0, duration:Phaser.Math.Between(280,540),
+        ease:'Quad.easeOut', onComplete:()=>dot.destroy() });
+    }
+
+    const isRace=this.scene.gameMode==='RACE';
+    if(!isRace){
+      // TIME mode: pop penalty −50
+      const penalty=50;
+      this.score=Math.max(0,this.score-penalty);
+      this.scoreTxt.setText(this.score);
+      this.drawPill();
+      this.showFloat('💥 POP −50','#ff4444');
+    } else {
+      // RACE mode: pop penalty −1 win (ไม่ติดลบ)
+      if(this.wins>0){
+        this.wins--;
+        this.winsTxt.setText(this.wins);
+        this.drawPill();
+        if(this.scene.playerCount===2) this.scene.refreshRaceHUD();
+      }
+      this.showFloat('💥 POP −1','#ff4444');
+    }
+
+    this.isStunned=true;
+    this.circ.setFillStyle(0x333344); this.circ.setRadius(this.baseR);
+    this.glow.setFillStyle(0xff1744,0.07); this.glow.setRadius(this.baseR+10);
+    this.shineGfx.clear(); this.drawRings('idle');
+
+    const stunMs=isRace?600:1800;
+    this.scene.time.delayedCall(stunMs,()=>{
+      this.isStunned=false; this.resetBalloon(); this.circ.setFillStyle(this.color);
+    });
+  }
+
+  showFloat(msg,col){
+    let wx=this.ctr.x, wy=this.ctr.y-this.currentSize-28;
+    let t=T(this.scene,wx,wy,msg,
+      { fontSize:'34px', fontStyle:'bold', color:col,
+        stroke:'#000000', strokeThickness:5 }).setOrigin(0.5).setDepth(D.FLOAT);
+    this.scene.tweens.add({ targets:t, y:wy-82, alpha:0, scaleX:0.88,scaleY:0.88,
+      duration:850, ease:'Quad.easeOut', onComplete:()=>t.destroy() });
+  }
+}
+
+// ═══════════════════════════════════════════════════
+//  CONFIG
+// ═══════════════════════════════════════════════════
+new Phaser.Game({
+  type: Phaser.AUTO,
+  width: W, height: H,
+  backgroundColor: '#111111',
+  resolution: DPR,
+  antialias: true,
+  roundPixels: true,
+  scale: { mode:Phaser.Scale.FIT, autoCenter:Phaser.Scale.CENTER_BOTH },
+  scene: MainScene,
+});
+</script>
+</body>
+</html>
