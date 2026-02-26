@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-<title>Perfect Puff — Ver B</title>
+<title>Perfect Puff — Ver A</title>
 <style>
 * { margin:0; padding:0; box-sizing:border-box; }
 html, body { width:100%; height:100%; overflow:hidden; }
@@ -15,59 +15,40 @@ canvas { display:block; }
 </head>
 <body>
 <script>
-const W=1280, H=720, DPR=window.devicePixelRatio||1;
+const W=1920, H=1080, DPR=window.devicePixelRatio||1;
 const FONT='system-ui,-apple-system,"Segoe UI",Arial,sans-serif';
 
 /*
-  DIFFICULTY (casual-friendly zones):
+  DIFFICULTY  (casual-friendly zones):
   zone width = maxR - perfR  (กว้าง = ง่าย)
   L1 EASY:   perfR=100  zone=48px  growRate=0.17  pop=30
   L2 MEDIUM: perfR=116  zone=32px  growRate=0.21  pop=60
   L3 HARD:   perfR=126  zone=22px  growRate=0.26  pop=80
-
-  RANDOM REWARD:
-  Level 1 EASY:   PERFECT 60% → +5/+10   GOOD 20% → +5
-  Level 2 MEDIUM: PERFECT 35% → +15/+25  GOOD 10% → +10/+15
-  Level 3 HARD:   PERFECT 15% → +40/+60  GOOD  5% → +20/+30
 */
 const MAX_R=148, MIN_R=100;
 const LEVELS=[
-  {idx:0,label:'LEVEL 1',timeLimit:15,color:0x33ccff,growRate:0.17,popPenalty:30,
-   perfR:100,maxR:MAX_R,diffLabel:'EASY',
-   perfChance:0.60,perfPool:[5,10], perfW:[55,45],
-   goodChance:0.20,goodPool:[5],    goodW:[100]},
-  {idx:1,label:'LEVEL 2',timeLimit:30,color:0xffe600,growRate:0.21,popPenalty:60,
-   perfR:116,maxR:MAX_R,diffLabel:'MEDIUM',
-   perfChance:0.35,perfPool:[15,25],perfW:[55,45],
-   goodChance:0.10,goodPool:[10,15],goodW:[60,40]},
-  {idx:2,label:'LEVEL 3',timeLimit:45,color:0xff44cc,growRate:0.26,popPenalty:80,
-   perfR:126,maxR:MAX_R,diffLabel:'HARD',
-   perfChance:0.15,perfPool:[40,60],perfW:[50,50],
-   goodChance:0.05,goodPool:[20,30],goodW:[55,45]},
+  {idx:0,label:'LEVEL 1',timeLimit:15,color:0x33ccff,growRate:0.17,popPenalty:30, perfR:100,maxR:MAX_R,diffLabel:'EASY'},
+  {idx:1,label:'LEVEL 2',timeLimit:30,color:0xffe600,growRate:0.21,popPenalty:60, perfR:116,maxR:MAX_R,diffLabel:'MEDIUM'},
+  {idx:2,label:'LEVEL 3',timeLimit:45,color:0xff44cc,growRate:0.26,popPenalty:80, perfR:126,maxR:MAX_R,diffLabel:'HARD'},
 ];
 
-function wRand(pool,w){
-  let r=Math.random()*w.reduce((a,b)=>a+b,0);
-  for(let i=0;i<pool.length;i++){ r-=w[i]; if(r<=0) return pool[i]; }
-  return pool[pool.length-1];
-}
-
-const LS='ppuff_b';
+const LS='ppuff_a';
 const getTot=()=>parseInt(localStorage.getItem(LS)||'0');
 const addTot=(n)=>localStorage.setItem(LS,getTot()+n);
 const rstTot=()=>localStorage.setItem(LS,'0');
 
 const Z={BG:0,GRID:1,BALLOON:10,HUD:50,MENU:60,OV:80,CARD:90,BTN:100,FLOAT:120};
 
-// ── layer helpers: add ทุก object เข้า layer ทันที ──────────────────
+// ── helper: สร้าง text แล้ว add เข้า layer ทันที ──────────────────
 function mT(layer,s,x,y,str,style){
   const t=s.add.text(x,y,str,{resolution:DPR,fontFamily:FONT,...style}).setOrigin(0.5).setDepth(Z.MENU);
   layer.add(t); return t;
 }
-function mG(layer,s){ const g=s.add.graphics().setDepth(Z.MENU); layer.add(g); return g; }
+function mG(layer,s){
+  const g=s.add.graphics().setDepth(Z.MENU); layer.add(g); return g;
+}
 function mR(layer,s,x,y,w,h){
-  const r=s.add.rectangle(x,y,w,h,0,0).setInteractive().setDepth(Z.MENU+1);
-  layer.add(r); return r;
+  const r=s.add.rectangle(x,y,w,h,0,0).setInteractive().setDepth(Z.MENU+1); layer.add(r); return r;
 }
 
 // ══════════════════════════════════════════════════════
@@ -83,9 +64,10 @@ class MainScene extends Phaser.Scene {
     for(let x=0;x<=W;x+=80) g.lineBetween(x,0,x,H);
     for(let y=0;y<=H;y+=80) g.lineBetween(0,y,W,y);
 
+    // layers — menu และ HUD แยกกันชัดเจน
     this.mL=this.add.layer().setDepth(Z.MENU);
     this.hL=this.add.layer().setDepth(Z.HUD);
-    this.balloon=new Balloon(this);
+    this.balloon=new Balloon(this,'#33ccff',0x33ccff);
 
     this.buildMenu();
     this.buildHUD();
@@ -99,68 +81,76 @@ class MainScene extends Phaser.Scene {
   buildMenu(){
     const cx=W/2, m=this.mL, s=this;
 
+    // ── badge ─────────────────────────────────────────
     const bbg=mG(m,s);
-    bbg.fillStyle(0xcc44ff,0.2); bbg.fillRoundedRect(cx-44,16,88,30,9);
-    mT(m,s,cx,31,'VER  B',{fontSize:'13px',fontStyle:'bold',color:'#cc44ff',letterSpacing:5});
+    bbg.fillStyle(0x33ccff,0.18); bbg.fillRoundedRect(cx-44,16,88,30,9);
+    mT(m,s,cx,31,'VER  A',{fontSize:'13px',fontStyle:'bold',color:'#33ccff',letterSpacing:5});
 
+    // ── title block ───────────────────────────────────
     const tg=mG(m,s);
-    tg.fillStyle(0xcc44ff,0.04); tg.fillRoundedRect(cx-410,56,820,140,18);
-    mT(m,s,cx,92,'HOLD TO INFLATE  ·  RELEASE TO SCORE',{fontSize:'16px',fontStyle:'bold',color:'#3a3050',letterSpacing:4});
-    mT(m,s,cx,148,'PERFECT PUFF',{fontSize:'78px',fontStyle:'bold',color:'#fff',stroke:'#cc44ff',strokeThickness:3});
+    tg.fillStyle(0x33ccff,0.04); tg.fillRoundedRect(cx-410,56,820,140,18);
+    mT(m,s,cx,92,'HOLD TO INFLATE  ·  RELEASE TO SCORE',{fontSize:'16px',fontStyle:'bold',color:'#334455',letterSpacing:4});
+    mT(m,s,cx,148,'PERFECT PUFF',{fontSize:'78px',fontStyle:'bold',color:'#fff',stroke:'#33ccff',strokeThickness:3});
 
-    mT(m,s,cx,244,'SELECT STARTING LEVEL',{fontSize:'12px',fontStyle:'bold',color:'#3a3050',letterSpacing:5});
+    // ── level select header ───────────────────────────
+    mT(m,s,cx,244,'SELECT STARTING LEVEL',{fontSize:'12px',fontStyle:'bold',color:'#334455',letterSpacing:5});
 
+    // ── level cards ───────────────────────────────────
     this.lvCards=[];
     [cx-390,cx,cx+390].forEach((bx,i)=>{
-      this.lvCards.push(this.mkCard(bx,326,LEVELS[i],i===0));
+      const c=this.mkCard(bx,326,LEVELS[i],i===0);
+      this.lvCards.push(c);
     });
 
-    // total score pill
+    // ── total score pill ──────────────────────────────
     const pg=mG(m,s);
     pg.fillStyle(0x080814,0.95); pg.fillRoundedRect(cx-228,424,456,64,14);
-    pg.lineStyle(1,0xcc44ff,0.25); pg.strokeRoundedRect(cx-228,424,456,64,14);
-    mT(m,s,cx-52,456,'TOTAL SCORE',{fontSize:'12px',fontStyle:'bold',color:'#2a1a3a',letterSpacing:4});
+    pg.lineStyle(1,0x33ccff,0.25); pg.strokeRoundedRect(cx-228,424,456,64,14);
+    mT(m,s,cx-52,456,'TOTAL SCORE',{fontSize:'12px',fontStyle:'bold',color:'#233344',letterSpacing:4});
     this.totTxt=s.add.text(cx+60,456,String(getTot()),
-      {resolution:DPR,fontFamily:FONT,fontSize:'30px',fontStyle:'bold',color:'#cc44ff'})
+      {resolution:DPR,fontFamily:FONT,fontSize:'30px',fontStyle:'bold',color:'#33ccff'})
       .setOrigin(0,0.5).setDepth(Z.MENU); m.add(this.totTxt);
     const rstTxt=s.add.text(cx+202,456,'RESET',
-      {resolution:DPR,fontFamily:FONT,fontSize:'11px',fontStyle:'bold',color:'#1e1030'})
+      {resolution:DPR,fontFamily:FONT,fontSize:'11px',fontStyle:'bold',color:'#1e2e3e'})
       .setOrigin(0.5).setDepth(Z.MENU); m.add(rstTxt);
     const rstHit=mR(m,s,cx+202,456,56,26);
     rstHit.on('pointerdown',()=>{ rstTot(); this.totTxt.setText('0'); });
     rstHit.on('pointerover',()=>rstTxt.setColor('#ff4444'));
-    rstHit.on('pointerout', ()=>rstTxt.setColor('#1e1030'));
+    rstHit.on('pointerout', ()=>rstTxt.setColor('#1e2e3e'));
 
-    // info box
+    // ── info box ──────────────────────────────────────
     const ig=mG(m,s);
-    ig.fillStyle(0xcc44ff,0.05); ig.fillRoundedRect(cx-400,502,800,50,12);
-    ig.lineStyle(1,0xcc44ff,0.18); ig.strokeRoundedRect(cx-400,502,800,50,12);
-    mT(m,s,cx,527,'🎰  PERFECT → chance for bonus!   GOOD → rare chance   Higher level = harder but bigger bonus',
-      {fontSize:'14px',fontStyle:'bold',color:'#5522aa'});
+    ig.fillStyle(0x33ccff,0.04); ig.fillRoundedRect(cx-400,502,800,50,12);
+    ig.lineStyle(1,0x33ccff,0.16); ig.strokeRoundedRect(cx-400,502,800,50,12);
+    mT(m,s,cx,527,'⭐  Score as many points as you can!   PERFECT = 100 pts  ·  GOOD = 50 pts  ·  POP = penalty',
+      {fontSize:'14px',fontStyle:'bold',color:'#1e4060'});
 
+    // ── start button ──────────────────────────────────
     this.mkMenuBtn(cx,604,'▶  START GAME',0x00e676,288,60,()=>this.startSession());
-    mT(m,s,cx,660,'hold  [A]  or tap anywhere to inflate',{fontSize:'14px',fontStyle:'bold',color:'#1a1030'});
+
+    // ── hint ──────────────────────────────────────────
+    mT(m,s,cx,660,'hold  [A]  or tap anywhere to inflate',{fontSize:'14px',fontStyle:'bold',color:'#1a2a38'});
   }
 
   mkCard(x,y,cfg,sel){
     const m=this.mL, s=this, bw=232,bh=132;
     const col=cfg.color, cHex=['#33ccff','#ffe600','#ff44cc'][cfg.idx];
-    const pPct=Math.round(cfg.perfChance*100), maxB=cfg.perfPool[cfg.perfPool.length-1];
+    const zoneW=cfg.maxR-cfg.perfR;
     const bg=mG(m,s);
     const t1=mT(m,s,x,y-36,cfg.label,{fontSize:'18px',fontStyle:'bold',color:'#fff'});
     const t2=mT(m,s,x,y-4, cfg.timeLimit+' sec',{fontSize:'28px',fontStyle:'bold',color:'#fff'});
     const t3=mT(m,s,x,y+28,cfg.diffLabel,{fontSize:'14px',fontStyle:'bold',color:cHex});
-    const t4=mT(m,s,x,y+52,`PERF: ${pPct}% · max +${maxB}`,{fontSize:'11px',fontStyle:'bold',color:'#332244'});
+    const t4=mT(m,s,x,y+52,`zone: ${zoneW}px`,{fontSize:'11px',fontStyle:'bold',color:'#334455'});
     const rd=(v)=>{
       bg.clear();
       if(v){
         bg.fillStyle(col,0.14); bg.fillRoundedRect(x-bw/2,y-bh/2,bw,bh,14);
         bg.lineStyle(2,col,1);  bg.strokeRoundedRect(x-bw/2,y-bh/2,bw,bh,14);
-        t1.setColor('#fff'); t2.setColor('#fff'); t3.setColor(cHex); t4.setColor('#9966cc');
+        t1.setColor('#fff'); t2.setColor('#fff'); t3.setColor(cHex); t4.setColor('#446688');
       } else {
         bg.fillStyle(0x0e0e1c,0.9); bg.fillRoundedRect(x-bw/2,y-bh/2,bw,bh,14);
         bg.lineStyle(1,0x252540,0.8); bg.strokeRoundedRect(x-bw/2,y-bh/2,bw,bh,14);
-        t1.setColor('#332244'); t2.setColor('#332244'); t3.setColor('#252040'); t4.setColor('#1a1030');
+        t1.setColor('#334455'); t2.setColor('#334455'); t3.setColor('#252540'); t4.setColor('#1a2530');
       }
     };
     rd(sel);
@@ -173,38 +163,42 @@ class MainScene extends Phaser.Scene {
     const m=this.mL, s=this;
     const bg=mG(m,s);
     const txt=mT(m,s,x,y,lbl,{fontSize:'23px',fontStyle:'bold',color:'#001800'});
+    const hit=mR(m,s,x,y,bw,bh);
     const dr=(hv)=>{
       bg.clear();
       bg.fillStyle(col,hv?1:0.9); bg.fillRoundedRect(x-bw/2,y-bh/2,bw,bh,16);
       bg.fillStyle(0xffffff,hv?0.14:0.06); bg.fillRoundedRect(x-bw/2+4,y-bh/2+4,bw-8,bh/2-4,10);
     };
     dr(false);
-    const hit=mR(m,s,x,y,bw,bh);
     hit.on('pointerdown',cb); hit.on('pointerover',()=>dr(true)); hit.on('pointerout',()=>dr(false));
   }
 
   // ━━━━━━━━━━━━━━━━━━━━━ HUD ━━━━━━━━━━━━━━━━━━━━━━━━━
   buildHUD(){
     const hl=this.hL, s=this;
-    const addH=o=>{ hl.add(o); return o; };
-    const hT=(x,y,str,st)=>addH(s.add.text(x,y,str,{resolution:DPR,fontFamily:FONT,...st}).setOrigin(0.5).setDepth(Z.HUD));
+    // สร้างทุก HUD object แล้ว add เข้า hLayer ทันที
 
-    const tg=addH(s.add.graphics().setDepth(Z.HUD));
+    const tg=s.add.graphics().setDepth(Z.HUD); hl.add(tg);
     tg.fillStyle(0x000000,0.65); tg.fillRoundedRect(W/2-110,8,220,54,14);
-    this.tTxt=hT(W/2,35,'0',{fontSize:'32px',fontStyle:'bold',color:'#fff'});
-    this.lvLbl=hT(W/2,72,'',{fontSize:'12px',fontStyle:'bold',color:'#cc44ff',letterSpacing:3});
+    this.tTxt=s.add.text(W/2,35,'0',{resolution:DPR,fontFamily:FONT,fontSize:'32px',fontStyle:'bold',color:'#fff'})
+      .setOrigin(0.5).setDepth(Z.HUD); hl.add(this.tTxt);
+    this.lvLbl=s.add.text(W/2,72,'',{resolution:DPR,fontFamily:FONT,fontSize:'12px',fontStyle:'bold',color:'#33ccff',letterSpacing:3})
+      .setOrigin(0.5).setDepth(Z.HUD); hl.add(this.lvLbl);
 
-    const bbg=addH(s.add.graphics().setDepth(Z.HUD));
+    const bbg=s.add.graphics().setDepth(Z.HUD); hl.add(bbg);
     bbg.fillStyle(0x060612,0.9); bbg.fillRoundedRect(12,8,114,52,10);
-    const bt=hT(69,34,'← BACK',{fontSize:'16px',fontStyle:'bold',color:'#663388'});
-    const bh=addH(s.add.rectangle(69,34,114,52,0,0).setInteractive().setDepth(Z.HUD));
+    const bt=s.add.text(69,34,'← BACK',{resolution:DPR,fontFamily:FONT,fontSize:'16px',fontStyle:'bold',color:'#446688'})
+      .setOrigin(0.5).setDepth(Z.HUD); hl.add(bt);
+    const bh=s.add.rectangle(69,34,114,52,0,0).setInteractive().setDepth(Z.HUD); hl.add(bh);
     bh.on('pointerdown',()=>this.goMenu());
-    bh.on('pointerover',()=>bt.setColor('#cc88ff')); bh.on('pointerout',()=>bt.setColor('#663388'));
+    bh.on('pointerover',()=>bt.setColor('#88bbdd')); bh.on('pointerout',()=>bt.setColor('#446688'));
 
-    const sg=addH(s.add.graphics().setDepth(Z.HUD));
+    const sg=s.add.graphics().setDepth(Z.HUD); hl.add(sg);
     sg.fillStyle(0x000000,0.6); sg.fillRoundedRect(W-184,8,174,54,12);
-    hT(W-97,24,'SESSION',{fontSize:'10px',fontStyle:'bold',color:'#221133',letterSpacing:3});
-    this.sesTxt=hT(W-97,44,'0',{fontSize:'22px',fontStyle:'bold',color:'#cc44ff'});
+    const sl=s.add.text(W-97,24,'SESSION',{resolution:DPR,fontFamily:FONT,fontSize:'10px',fontStyle:'bold',color:'#223344',letterSpacing:3})
+      .setOrigin(0.5).setDepth(Z.HUD); hl.add(sl);
+    this.sesTxt=s.add.text(W-97,44,'0',{resolution:DPR,fontFamily:FONT,fontSize:'22px',fontStyle:'bold',color:'#33ccff'})
+      .setOrigin(0.5).setDepth(Z.HUD); hl.add(this.sesTxt);
   }
 
   // ━━━━━━━━━━━━━━━━━━━━━ FLOW ━━━━━━━━━━━━━━━━━━━━━━━━
@@ -212,7 +206,9 @@ class MainScene extends Phaser.Scene {
 
   startLevel(idx){
     const cfg=LEVELS[idx]; this.cfg=cfg; this.mode='PLAYING';
-    this.mL.setVisible(false); this.clearOv(); this.hL.setVisible(true);
+    this.mL.setVisible(false);   // ← ซ่อน menu layer ทั้งหมด
+    this.clearOv();
+    this.hL.setVisible(true);
     this.balloon.activate(W/2,H/2+28,cfg);
     this.timeLeft=cfg.timeLimit;
     this.tTxt.setText(String(this.timeLeft)).setColor('#fff');
@@ -239,24 +235,23 @@ class MainScene extends Phaser.Scene {
     this.clearOv();
     const cx=W/2,cy=H/2,isLast=cfg.idx===2;
     const push=o=>{this.ovRefs.push(o);return o;};
-    const oT=(x,y,str,st)=>push(this.add.text(x,y,str,{resolution:DPR,fontFamily:FONT,...st}).setOrigin(0.5).setDepth(Z.CARD));
-
     push(this.add.rectangle(cx,cy,W,H,0x000000,0.75).setDepth(Z.OV));
     const cw=560,ch=isLast?300:358;
     const card=push(this.add.graphics().setDepth(Z.CARD));
-    card.fillStyle(0x060610,1); card.fillRoundedRect(cx-cw/2,cy-ch/2,cw,ch,22);
+    card.fillStyle(0x080814,1); card.fillRoundedRect(cx-cw/2,cy-ch/2,cw,ch,22);
     card.lineStyle(2,cfg.color,0.55); card.strokeRoundedRect(cx-cw/2,cy-ch/2,cw,ch,22);
     const vg=push(this.add.graphics().setDepth(Z.CARD));
-    vg.fillStyle(0xcc44ff,0.2); vg.fillRoundedRect(cx-30,cy-ch/2+8,60,24,8);
-    oT(cx,cy-ch/2+20,'VER B',{fontSize:'11px',fontStyle:'bold',color:'#cc44ff',letterSpacing:4});
+    vg.fillStyle(0x33ccff,0.15); vg.fillRoundedRect(cx-30,cy-ch/2+8,60,24,8);
+    const oT=(x,y,str,style)=>{ const t=this.add.text(x,y,str,{resolution:DPR,fontFamily:FONT,...style}).setOrigin(0.5).setDepth(Z.CARD); push(t); return t; };
+    oT(cx,cy-ch/2+20,'VER A',{fontSize:'11px',fontStyle:'bold',color:'#33ccff',letterSpacing:4});
     const cHex=['#33ccff','#ffe600','#ff44cc'][cfg.idx];
     oT(cx,cy-ch/2+54,cfg.label+' CLEAR',{fontSize:'38px',fontStyle:'bold',color:'#fff',stroke:cHex,strokeThickness:2});
     oT(cx,cy-ch/2+102,`Score: ${score} pts`,{fontSize:'26px',fontStyle:'bold',color:cHex});
-    oT(cx,cy-ch/2+142,`Session: ${this.sesScore}  ·  All-time: ${getTot()}`,{fontSize:'16px',fontStyle:'bold',color:'#443355'});
+    oT(cx,cy-ch/2+142,`Session: ${this.sesScore}  ·  All-time: ${getTot()}`,{fontSize:'16px',fontStyle:'bold',color:'#334455'});
     if(!isLast){
       const nc=LEVELS[cfg.idx+1];
       this.mkOvBtn(cx,cy+68,`▶  NEXT: ${nc.label} (${nc.timeLimit}s · ${nc.diffLabel})`,cfg.color,318,50,()=>this.startLevel(nc.idx));
-      this.mkOvBtn(cx,cy+134,'← MENU',0x443355,164,42,()=>this.goMenu());
+      this.mkOvBtn(cx,cy+134,'← MENU',0x334466,164,42,()=>this.goMenu());
     } else {
       oT(cx,cy+48,'🏆  ALL LEVELS COMPLETE!',{fontSize:'24px',fontStyle:'bold',color:'#ffe600'});
       this.mkOvBtn(cx,cy+116,'← MAIN MENU',0x00e676,234,52,()=>this.goMenu());
@@ -265,7 +260,7 @@ class MainScene extends Phaser.Scene {
 
   mkOvBtn(x,y,lbl,col,bw,bh,cb){
     const bg=this.add.graphics().setDepth(Z.BTN); this.ovRefs.push(bg);
-    const txt=this.add.text(x,y,lbl,{resolution:DPR,fontFamily:FONT,fontSize:'18px',fontStyle:'bold',color:'#ddc8ff'})
+    const txt=this.add.text(x,y,lbl,{resolution:DPR,fontFamily:FONT,fontSize:'18px',fontStyle:'bold',color:'#cce8ff'})
       .setOrigin(0.5).setDepth(Z.BTN); this.ovRefs.push(txt);
     const dr=(hv)=>{
       bg.clear(); bg.fillStyle(col,hv?0.28:0.10); bg.fillRoundedRect(x-bw/2,y-bh/2,bw,bh,12);
@@ -281,7 +276,8 @@ class MainScene extends Phaser.Scene {
   goMenu(){
     if(this.tEv) this.tEv.remove(); this.clearOv();
     this.mode='MENU'; this.balloon.deactivate();
-    this.hL.setVisible(false); this.mL.setVisible(true);
+    this.hL.setVisible(false);
+    this.mL.setVisible(true);   // ← แสดง menu layer ทั้งหมด
     this.totTxt?.setText(String(getTot()));
   }
 
@@ -296,23 +292,22 @@ class MainScene extends Phaser.Scene {
 
 // ══════════════════════════════════════════════════════
 class Balloon {
-  constructor(s){
-    this.s=s; this.active=false;
-    this.baseR=40; this.shrinkRate=0.11; this._held=false;
+  constructor(s,colHex,colInt){
+    this.s=s; this.colHex=colHex; this.colInt=colInt;
+    this.active=false; this.baseR=40; this.shrinkRate=0.11; this._held=false;
     this.root=s.add.container(0,0).setDepth(Z.BALLOON).setVisible(false);
     this.shd =s.add.ellipse(4,8,80,20,0x000000,0.2);
-    this.glow=s.add.circle(0,0,52,0xcc44ff,0.14);
-    this.body=s.add.circle(0,0,this.baseR,0xcc44ff);
+    this.glow=s.add.circle(0,0,52,colInt,0.14);
+    this.body=s.add.circle(0,0,this.baseR,colInt);
     this.shine=s.add.graphics(); this.rings=s.add.graphics(); this.pill=s.add.graphics();
     this.sdsp=s.add.text(0,-206,'0',{resolution:DPR,fontFamily:FONT,fontSize:'34px',fontStyle:'bold',color:'#fff'}).setOrigin(0.5);
-    this.plbl=s.add.text(0,-252,'PLAYER 1',{resolution:DPR,fontFamily:FONT,fontSize:'14px',fontStyle:'bold',color:'#cc44ff',letterSpacing:4}).setOrigin(0.5);
-    // ใส่ทั้ง sdsp และ plbl ใน container เสมอ
+    this.plbl=s.add.text(0,-252,'PLAYER 1',{resolution:DPR,fontFamily:FONT,fontSize:'14px',fontStyle:'bold',color:colHex,letterSpacing:4}).setOrigin(0.5);
     this.root.add([this.shd,this.glow,this.rings,this.body,this.shine,this.pill,this.sdsp,this.plbl]);
   }
   activate(x,y,cfg){
     this.active=true; this._held=false; this.stunned=false; this.cfg=cfg;
     this.score=0; this.sdsp.setText('0');
-    this.body.setFillStyle(0xcc44ff); this.glow.setFillStyle(0xcc44ff,0.14);
+    this.body.setFillStyle(this.colInt); this.glow.setFillStyle(this.colInt,0.14);
     this.setR(this.baseR); this.drawRings('idle'); this.drawPill();
     this.root.setPosition(x,y).setVisible(true);
   }
@@ -332,9 +327,9 @@ class Balloon {
   }
   drawRings(st){
     this.rings.clear();
-    const pR=this.cfg?.perfR||100, mR=this.cfg?.maxR||148;
+    const pR=this.cfg?.perfR||104, mR=this.cfg?.maxR||148;
     const S={
-      idle:   [[2,0x7744aa,0.75],[1,0x552288,0.55],[1,0x331155,0.40]],
+      idle:   [[2,0x4488bb,0.75],[1,0x2a5577,0.55],[1,0x1a3a55,0.40]],
       good:   [[3,0xffe600,0.95],[2,0xffe600,0.65],[1,0xffe600,0.35]],
       perfect:[[4,0x00e676,1.00],[3,0x00e676,0.70],[1,0x00e676,0.40]],
       danger: [[4,0xff1744,1.00],[3,0xff1744,0.70],[1,0xff1744,0.40]],
@@ -352,72 +347,33 @@ class Balloon {
       if(nr>=cfg.maxR*0.93)  { this.drawRings('danger');  this.glow.setFillStyle(0xff1744,0.1+0.18*Math.abs(Math.sin(Date.now()*0.013))); }
       else if(nr>=cfg.perfR) { this.drawRings('perfect'); this.glow.setFillStyle(0x00e676,0.12+0.10*Math.abs(Math.sin(Date.now()*0.008))); }
       else if(nr>=MIN_R)     { this.drawRings('good');    this.glow.setFillStyle(0xffe600,0.12); }
-      else                   { this.drawRings('idle');    this.glow.setFillStyle(0xcc44ff,0.12); }
+      else                   { this.drawRings('idle');    this.glow.setFillStyle(this.colInt,0.12); }
       if(nr>=cfg.maxR){ this.pop(); this._held=false; return; }
       this._held=true;
     } else {
       if(this._held) this.eval(); this._held=false;
-      if(this.r>this.baseR){ this.setR(Math.max(this.baseR,this.r-this.shrinkRate*d)); this.glow.setFillStyle(0xcc44ff,0.10); this.drawRings('idle'); }
+      if(this.r>this.baseR){ this.setR(Math.max(this.baseR,this.r-this.shrinkRate*d)); this.glow.setFillStyle(this.colInt,0.10); this.drawRings('idle'); }
     }
   }
   eval(){
     const r=this.r,cfg=this.cfg; if(r<this.baseR+6) return;
-    if(r<MIN_R){ this.float('TOO SMALL','#334455'); this.resetBall(); return; }
-    const isPerfect=r>=cfg.perfR;
-    const base=isPerfect?100:50;
-    this.score+=base; this.sdsp.setText(this.score); this.drawPill();
-    this.s.tweens.add({targets:this.sdsp,scaleX:1.4,scaleY:1.4,duration:80,yoyo:true,ease:'Back.easeOut'});
-    const chance=isPerfect?cfg.perfChance:cfg.goodChance;
-    const pool=isPerfect?cfg.perfPool:cfg.goodPool;
-    const weights=isPerfect?cfg.perfW:cfg.goodW;
-    if(Math.random()<chance){
-      const bonus=wRand(pool,weights);
-      this.score+=bonus; this.sdsp.setText(this.score); this.drawPill();
-      isPerfect ? this.floatJackpot(base,bonus) : this.floatLucky(bonus);
-    } else {
-      this.float(isPerfect?'✦ PERFECT! +100':'GOOD +50', isPerfect?'#00e676':'#ffe600');
-    }
-    this.resetBall();
-  }
-  floatJackpot(base,bonus){
-    const fx=this.root.x,fy=this.root.y-this.r-22;
-    const t1=this.s.add.text(fx,fy,'✦ PERFECT!  🎰  JACKPOT!',
-      {resolution:DPR,fontFamily:FONT,fontSize:'28px',fontStyle:'bold',color:'#00e676',stroke:'#000',strokeThickness:5})
-      .setOrigin(0.5).setDepth(Z.FLOAT);
-    const t2=this.s.add.text(fx,fy+34,`+${base}  bonus  +${bonus}`,
-      {resolution:DPR,fontFamily:FONT,fontSize:'20px',fontStyle:'bold',color:'#ffdd22',stroke:'#000',strokeThickness:4})
-      .setOrigin(0.5).setDepth(Z.FLOAT);
-    this.s.tweens.add({targets:[t1,t2],y:`-=76`,alpha:0,duration:950,ease:'Quad.easeOut',
-      onComplete:()=>{t1.destroy();t2.destroy();}});
-    this.s.tweens.add({targets:t1,scaleX:1.25,scaleY:1.25,duration:90,yoyo:true,ease:'Back.easeOut'});
-  }
-  floatLucky(bonus){
-    const fx=this.root.x,fy=this.root.y-this.r-22;
-    const t1=this.s.add.text(fx,fy,'GOOD +50',
-      {resolution:DPR,fontFamily:FONT,fontSize:'28px',fontStyle:'bold',color:'#ffe600',stroke:'#000',strokeThickness:5})
-      .setOrigin(0.5).setDepth(Z.FLOAT);
-    const t2=this.s.add.text(fx,fy+34,`🍀 LUCKY! +${bonus}`,
-      {resolution:DPR,fontFamily:FONT,fontSize:'18px',fontStyle:'bold',color:'#aaffaa',stroke:'#000',strokeThickness:4})
-      .setOrigin(0.5).setDepth(Z.FLOAT);
-    this.s.tweens.add({targets:[t1,t2],y:`-=70`,alpha:0,duration:920,ease:'Quad.easeOut',
-      onComplete:()=>{t1.destroy();t2.destroy();}});
-  }
-  float(msg,col){
-    const fx=this.root.x,fy=this.root.y-this.r-22;
-    const t=this.s.add.text(fx,fy,msg,{resolution:DPR,fontFamily:FONT,
-      fontSize:'28px',fontStyle:'bold',color:col,stroke:'#000',strokeThickness:5})
-      .setOrigin(0.5).setDepth(Z.FLOAT);
-    this.s.tweens.add({targets:t,y:fy-70,alpha:0,duration:800,ease:'Quad.easeOut',onComplete:()=>t.destroy()});
+    let pts=0,msg='',col='#fff';
+    if(r<MIN_R)       { msg='TOO SMALL'; col='#334455'; }
+    else if(r<cfg.perfR){ msg='GOOD +50'; col='#ffe600'; pts=50; }
+    else              { msg='PERFECT! +100'; col='#00e676'; pts=100; }
+    if(pts){ this.score+=pts; this.sdsp.setText(this.score); this.drawPill();
+      this.s.tweens.add({targets:this.sdsp,scaleX:1.4,scaleY:1.4,duration:80,yoyo:true,ease:'Back.easeOut'}); }
+    this.float(msg,col); this.resetBall();
   }
   resetBall(){
-    this.setR(this.baseR); this.body.setFillStyle(0xcc44ff);
-    this.glow.setFillStyle(0xcc44ff,0.14); this.drawRings('idle');
+    this.setR(this.baseR); this.body.setFillStyle(this.colInt);
+    this.glow.setFillStyle(this.colInt,0.14); this.drawRings('idle');
   }
   pop(){
     this.s.cameras.main.shake(100,0.006);
     for(let i=0;i<10;i++){
       const a=(i/10)*Math.PI*2,dist=Phaser.Math.Between(50,130);
-      const dot=this.s.add.circle(this.root.x,this.root.y,Phaser.Math.Between(3,8),0xcc44ff);
+      const dot=this.s.add.circle(this.root.x,this.root.y,Phaser.Math.Between(3,8),this.colInt);
       this.s.tweens.add({targets:dot,x:this.root.x+Math.cos(a)*dist,y:this.root.y+Math.sin(a)*dist,
         alpha:0,scale:0,duration:Phaser.Math.Between(280,500),ease:'Quad.easeOut',onComplete:()=>dot.destroy()});
     }
@@ -425,9 +381,16 @@ class Balloon {
     this.score=Math.max(0,this.score-pen); this.sdsp.setText(this.score); this.drawPill();
     this.float(`💥 POP −${pen}`,'#ff4444');
     this.stunned=true;
-    this.body.setFillStyle(0x0e0818); this.body.setRadius(this.baseR);
+    this.body.setFillStyle(0x0e0e1e); this.body.setRadius(this.baseR);
     this.glow.setFillStyle(0xff1744,0.07); this.shine.clear(); this.drawRings('idle');
-    this.s.time.delayedCall(1600,()=>{ this.stunned=false; this.resetBall(); this.body.setFillStyle(0xcc44ff); });
+    this.s.time.delayedCall(1600,()=>{ this.stunned=false; this.resetBall(); this.body.setFillStyle(this.colInt); });
+  }
+  float(msg,col){
+    const fx=this.root.x,fy=this.root.y-this.r-22;
+    const t=this.s.add.text(fx,fy,msg,{resolution:DPR,fontFamily:FONT,
+      fontSize:'28px',fontStyle:'bold',color:col,stroke:'#000',strokeThickness:5})
+      .setOrigin(0.5).setDepth(Z.FLOAT);
+    this.s.tweens.add({targets:t,y:fy-70,alpha:0,duration:800,ease:'Quad.easeOut',onComplete:()=>t.destroy()});
   }
 }
 
